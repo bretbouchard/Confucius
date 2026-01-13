@@ -203,34 +203,48 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 This implementation is inspired by and based upon the research architecture described in:
 
-**Meta's Confucius Code Agent**
-*Hierarchical working memory for complex multi-step reasoning*
+**Confucius Code Agent: An Open-sourced AI Software Engineer at Industrial Scale**
 
-Confucius implements a production-ready version of the hierarchical memory architecture for cross-session learning in AI agents, adapting the research concepts for practical use with Claude Code and other AI development tools.
+> Zhaodong Wang, Zhenting Qi, Sherman Wong, Nathan Hu, Samuel Lin, Jun Ge, Erwin Gao, Yining Yang, Ben Maurer, Wenlin Chen, David Recordon, Yilun Du, Minlan Yu, Ying Zhang
+> *arXiv:2512.10398* | December 2025 | Meta & Harvard
 
-### Original Project
+[📄 Paper on arXiv](https://arxiv.org/abs/2512.10398)
 
-Built for the [White Room](https://github.com/your-org/white-room) project - a multi-platform Schillinger System-based music creation system.
+**Key Research Contributions:**
+- **Hierarchical Working Memory** - Long-context reasoning for complex codebase navigation
+- **Persistent Note-Taking System** - Cross-session continual learning and knowledge retention
+- **Unified Orchestrator** - Coordinates agent activities across multiple tools and contexts
+- **Meta-Agent Framework** - Build-test-improve loop for rapid agent development
+
+This project implements a production-ready version of the hierarchical memory architecture for cross-session learning in AI agents, adapting the research concepts for practical use with Claude Code and other AI development tools.
 
 ### Citation
 
-If you use Confucius in your research or project, please cite:
+If you use Confucius in your research or project, please cite both the original paper and this implementation:
 
 ```bibtex
 @software{confucius2025,
   title = {Confucius: Hierarchical Memory System for AI Agents},
   author = {Confucius AI Contributors},
   year = {2025},
-  url = {https://github.com/your-org/confucius},
-  note = {Inspired by Meta's Confucius Code Agent architecture}
+  url = {https://github.com/bretbouchard/Confucius},
+  note = {Production implementation inspired by Confucius Code Agent architecture}
+}
+
+@article{wang2025confucius,
+  title = {Confucius Code Agent: An Open-sourced AI Software Engineer at Industrial Scale},
+  author = {Wang, Zhaodong and Qi, Zhenting and Wong, Sherman and Hu, Nathan and Lin, Samuel and Ge, Jun and Gao, Erwin and Yang, Yining and Maurer, Ben and Chen, Wenlin and Recordon, David and Du, Yilun and Yu, Minlan and Zhang, Ying},
+  journal = {arXiv preprint arXiv:2512.10398},
+  year = {2025},
+  url = {https://arxiv.org/abs/2512.10398}
 }
 ```
 
 ## Support
 
 - 📖 [Documentation](docs/)
-- 🐛 [Issue Tracker](https://github.com/your-org/confucius/issues)
-- 💬 [Discussions](https://github.com/your-org/confucius/discussions)
+- 🐛 [Issue Tracker](https://github.com/bretbouchard/Confucius/issues)
+- 💬 [Discussions](https://github.com/bretbouchard/Confucius/discussions)
 
 ---
 
