@@ -1,7 +1,7 @@
-# Confucius 🧠
+# Confucius
 
 <div align="center">
-  <img src="logo-square.png" alt="Confucius Logo" width="200" height="200"/>
+  <img src="images/logo.png" alt="Confucius Logo" width="500"/>
 </div>
 
 **Hierarchical Memory System for AI Agents with Cross-Session Learning**
