@@ -1,0 +1,46 @@
+{
+  "name": "confucius",
+  "version": "1.0.0",
+  "description": "Confucius - Hierarchical Memory System for AI Agents with Cross-Session Learning",
+  "private": false,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "clean": "rm -rf node_modules **/node_modules **/dist",
+    "type-check": "npm run type-check --workspaces --if-present"
+  },
+  "keywords": [
+    "ai",
+    "memory",
+    "hierarchical",
+    "compression",
+    "context-management",
+    "cross-session-learning",
+    "mcp-server",
+    "claude-code"
+  ],
+  "author": "Confucius AI Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/confucius.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/confucius/issues"
+  },
+  "homepage": "https://github.com/your-org/confucius#readme",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0",
+    "vitest": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

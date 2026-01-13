@@ -1,0 +1,68 @@
+{
+  "name": "@confucius-ai/memory",
+  "version": "1.0.0",
+  "description": "Confucius Hierarchical Memory System - Multi-scope context management with intelligent compression",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "memory",
+    "hierarchical",
+    "compression",
+    "context-management",
+    "ai",
+    "cross-session-learning"
+  ],
+  "author": "Confucius AI Contributors",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^8.54.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./core": {
+      "import": "./dist/core/index.js",
+      "types": "./dist/core/index.d.ts"
+    },
+    "./scopes": {
+      "import": "./dist/scopes/index.js",
+      "types": "./dist/scopes/index.d.ts"
+    },
+    "./compression": {
+      "import": "./dist/compression/index.js",
+      "types": "./dist/compression/index.d.ts"
+    },
+    "./storage": {
+      "import": "./dist/storage/index.js",
+      "types": "./dist/storage/index.d.ts"
+    },
+    "./integrations": {
+      "import": "./dist/integrations/index.js",
+      "types": "./dist/integrations/index.d.ts"
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
