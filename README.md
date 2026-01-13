@@ -7,7 +7,6 @@
 **Hierarchical Memory System for AI Agents with Cross-Session Learning**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![npm](https://img.shields.io/npm/v/@confucius-ai/memory)](https://www.npmjs.com/package/@confucius-ai/memory)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 
 ## Overview
@@ -39,14 +38,59 @@ Confucius Memory System
 
 ## Installation
 
+### Option 1: Clone and Build (Recommended for Development)
+
 ```bash
-npm install @confucius-ai/memory
+# Clone the repository
+git clone https://github.com/bretbouchard/Confucius.git
+cd Confucius
+
+# Install dependencies
+npm install
+
+# Build all packages
+npm run build
+
+# The packages are now available:
+# - packages/memory/dist
+# - packages/mcp-server/dist
+```
+
+### Option 2: Use Local MCP Server Directly
+
+```bash
+# From the confucius directory
+cd /path/to/Confucius
+
+# Build and start the MCP server
+npm run build
+node packages/mcp-server/dist/index.js
+```
+
+### Configuring Claude Code
+
+Add to your Claude Code `settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "confucius": {
+      "command": "node",
+      "args": ["/absolute/path/to/Confucius/packages/mcp-server/dist/index.js"],
+      "env": {
+        "CONFUCIUS_REPOSITORY": "/path/to/your/project",
+        "CONFUCIUS_STORAGE": ".confucius/memory"
+      }
+    }
+  }
+}
 ```
 
 ## Quick Start
 
 ```typescript
 import { HierarchicalMemory } from '@confucius-ai/memory';
+// Or for local development: import { HierarchicalMemory } from './packages/memory/dist/index.js';
 
 const memory = new HierarchicalMemory({
   repository: '/path/to/project',
@@ -86,25 +130,7 @@ console.log(context.artifacts);
 
 ## MCP Server
 
-Confucius includes an MCP server for seamless integration with Claude Code:
-
-```bash
-# Install
-npm install -g @confucius-ai/mcp-server
-
-# Configure in Claude Code settings.json
-{
-  "mcpServers": {
-    "confucius": {
-      "command": "confucius-mcp-server",
-      "env": {
-        "CONFUCIUS_REPOSITORY": "/path/to/project",
-        "CONFUCIUS_STORAGE": ".confucius/memory"
-      }
-    }
-  }
-}
-```
+Confucius includes an MCP server for seamless integration with Claude Code. See [Installation](#installation) above for setup instructions.
 
 ### Available Tools
 
@@ -126,8 +152,8 @@ npm install -g @confucius-ai/mcp-server
 
 ## Packages
 
-- **`@confucius-ai/memory`** - Core memory system
-- **`@confucius-ai/mcp-server`** - MCP server for Claude Code
+- **`@confucius-ai/memory`** (`packages/memory/`) - Core memory system
+- **`@confucius-ai/mcp-server`** (`packages/mcp-server/`) - MCP server for Claude Code
 
 ## Documentation
 
@@ -150,6 +176,7 @@ npm install -g @confucius-ai/mcp-server
 
 ```typescript
 import { BeadsIntegration } from '@confucius-ai/memory/integrations';
+// Or for local development: import { BeadsIntegration } from './packages/memory/dist/integrations/index.js';
 
 const beads = new BeadsIntegration({
   databasePath: '/path/to/project',
