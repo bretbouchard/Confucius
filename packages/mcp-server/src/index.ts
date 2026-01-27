@@ -81,7 +81,7 @@ class ConfuciusOrchestratorServer {
     }
 
     // Dynamic import to avoid loading if not needed
-    import('@confucius-ai/memory/storage/BeadsIntegration.js').then(({ BeadsIntegration }) => {
+    import('@confucius-ai/memory/storage').then(({ BeadsIntegration }) => {
       const beads = new BeadsIntegration({
         databasePath: process.env.CONFUCIUS_REPOSITORY || process.cwd(),
         autoCreateTaskScopes: true,

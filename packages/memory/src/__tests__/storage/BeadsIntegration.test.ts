@@ -12,7 +12,8 @@ describe('BeadsIntegration', () => {
 
   beforeEach(() => {
     config = {
-      databasePath: process.cwd(),
+      // Use white_room beads database for tests
+      databasePath: '/Users/bretbouchard/apps/schill/white_room',
       autoCreateTaskScopes: true,
       autoGenerateNotes: true,
     };

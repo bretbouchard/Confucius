@@ -1,0 +1,45 @@
+{
+  "name": "@confucius-ai/cca-mcp-server",
+  "version": "1.0.0",
+  "description": "Confucius Context Agent MCP Server - Provides tools for interacting with the hierarchical memory system",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "cca-mcp-server": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && node dist/index.js",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"Tests not yet implemented\" && exit 0"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "confucius",
+    "memory",
+    "hierarchical",
+    "ai",
+    "context-management",
+    "claude"
+  ],
+  "author": "Confucius AI Contributors",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@confucius-ai/memory": "file:../memory"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.9",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

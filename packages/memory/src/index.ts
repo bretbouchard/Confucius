@@ -6,7 +6,13 @@
 
 // Core exports
 export { HierarchicalMemory } from './core/HierarchicalMemory.js';
-export type { MemoryConfig, Context, Artifact } from './core/types.js';
+export type {
+  MemoryConfig,
+  Context,
+  Artifact,
+  ArtifactType,
+  ScopeType,
+} from './core/types.js';
 
 // Scope exports
 export { RepositoryScope } from './scopes/RepositoryScope.js';

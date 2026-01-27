@@ -25,6 +25,7 @@ export class HierarchicalMemory {
   private compression: ContextCompressionEngine;
   private storage: ArtifactStorage;
   private config: MemoryConfig;
+  private initialized: boolean = false;
 
   constructor(config: MemoryConfig) {
     this.config = config;
@@ -56,6 +57,41 @@ export class HierarchicalMemory {
         retentionDays: 90,
       }
     );
+  }
+
+  /**
+   * Initialize memory system (call after constructor)
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+
+    await this.loadArtifacts();
+    this.initialized = true;
+  }
+
+  /**
+   * Load existing artifacts from storage into scopes
+   */
+  private async loadArtifacts(): Promise<void> {
+    try {
+      const artifacts = await this.storage.list();
+
+      for (const artifact of artifacts) {
+        const scopeName = this.getScopeName(artifact);
+        const scope = this.scopes.get(scopeName);
+
+        if (scope) {
+          await scope.store(artifact);
+        }
+      }
+
+      console.error(`✅ Confucius loaded ${artifacts.length} artifacts from storage`);
+    } catch (error) {
+      // If storage doesn't exist yet, that's okay
+      console.error('ℹ️  No existing artifacts found in storage');
+    }
   }
 
   /**
@@ -99,6 +135,8 @@ export class HierarchicalMemory {
    * Store artifact in appropriate scope
    */
   async store(artifact: Artifact): Promise<void> {
+    await this.initialize();
+
     const scopeName = this.getScopeName(artifact);
     const scope = this.scopes.get(scopeName);
 
@@ -117,6 +155,7 @@ export class HierarchicalMemory {
    * Retrieve relevant context from all scopes
    */
   async retrieve(query: string, activeScope?: string): Promise<Context> {
+    await this.initialize();
     // Collect artifacts from all scopes
     const allArtifacts: Artifact[] = [];
 

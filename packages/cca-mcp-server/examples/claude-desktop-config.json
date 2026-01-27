@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "cca": {
+      "command": "node",
+      "args": [
+        "/Users/bretbouchard/apps/schill/confucius/packages/cca-mcp-server/dist/index.js"
+      ],
+      "env": {
+        "CONFUCIUS_REPO": "/Users/bretbouchard/apps/schill/white_room",
+        "CONFUCIUS_SUBMODULES": "sdk,juce_backend,swift_frontend,daw_control,design_system,infrastructure"
+      }
+    }
+  }
+}
