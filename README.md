@@ -69,7 +69,7 @@ node packages/mcp-server/dist/index.js
 
 ### Configuring Claude Code
 
-Add to your Claude Code `settings.json`:
+**Create a `.mcp.json` file in your project directory:**
 
 ```json
 {
@@ -79,12 +79,35 @@ Add to your Claude Code `settings.json`:
       "args": ["/absolute/path/to/Confucius/packages/mcp-server/dist/index.js"],
       "env": {
         "CONFUCIUS_REPOSITORY": "/path/to/your/project",
-        "CONFUCIUS_STORAGE": ".confucius/memory"
+        "CONFUCIUS_STORAGE": ".beads/memory"
       }
     }
   }
 }
 ```
+
+**Example for a project using Beads task management:**
+
+```json
+{
+  "mcpServers": {
+    "confucius": {
+      "command": "node",
+      "args": ["/Users/yourname/apps/schill/confucius/packages/mcp-server/dist/index.js"],
+      "env": {
+        "CONFUCIUS_REPOSITORY": "/Users/yourname/apps/schill/white_room",
+        "CONFUCIUS_STORAGE": ".beads/memory"
+      }
+    }
+  }
+}
+```
+
+**Important Notes:**
+- The `.mcp.json` file must be in your **project root directory**, not in `~/.claude/`
+- Use absolute paths for the MCP server executable
+- `CONFUCIUS_REPOSITORY` should point to your project's root directory
+- `CONFUCIUS_STORAGE` is where memory artifacts are stored (typically `.beads/memory` for Beads integration)
 
 ## Quick Start
 
