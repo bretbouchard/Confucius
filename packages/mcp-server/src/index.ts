@@ -131,8 +131,8 @@ class ConfuciusOrchestratorServer {
                 },
                 type: {
                   type: 'string',
-                  description: 'Artifact type (pattern, error_message, design_decision, build_log, test_result, conversation)',
-                  enum: ['pattern', 'error_message', 'design_decision', 'build_log', 'test_result', 'conversation'],
+                  description: 'Artifact type (pattern, error_message, design_decision, build_log, test_result, conversation, successful_trajectory, failed_trajectory, knowledge_state)',
+                  enum: ['pattern', 'error_message', 'design_decision', 'build_log', 'test_result', 'conversation', 'successful_trajectory', 'failed_trajectory', 'knowledge_state'],
                 },
                 scope: {
                   type: 'string',
@@ -158,6 +158,15 @@ class ConfuciusOrchestratorServer {
                   minimum: 0,
                   maximum: 1,
                 },
+                outcome: {
+                  type: 'string',
+                  description: 'Task outcome (for RnG Framework)',
+                  enum: ['success', 'failure'],
+                },
+                trajectory: {
+                  type: 'string',
+                  description: 'Trajectory identifier (for RnG Framework)',
+                },
               },
               required: ['content', 'type', 'scope'],
             },
@@ -178,6 +187,46 @@ class ConfuciusOrchestratorServer {
                 },
               },
               required: ['query'],
+            },
+          },
+          {
+            name: 'memory_retrieve_successes',
+            description: 'Retrieve ONLY successful trajectories from Confucius memory (RnG Framework)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: {
+                  type: 'string',
+                  description: 'Search query for context retrieval',
+                },
+                activeScope: {
+                  type: 'string',
+                  description: 'Active scope name (optional)',
+                },
+              },
+              required: ['query'],
+            },
+          },
+          {
+            name: 'memory_retrodict',
+            description: 'Retrodict missing knowledge state from a failure by analyzing successful trajectories (RnG Framework)',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                failureDescription: {
+                  type: 'string',
+                  description: 'Description of what failed',
+                },
+                taskContext: {
+                  type: 'string',
+                  description: 'Context of the task that failed',
+                },
+                activeScope: {
+                  type: 'string',
+                  description: 'Active scope to search for successes (optional)',
+                },
+              },
+              required: ['failureDescription', 'taskContext'],
             },
           },
           {
@@ -261,6 +310,12 @@ class ConfuciusOrchestratorServer {
         case 'memory_retrieve':
           return await this.handleMemoryRetrieve(args);
 
+        case 'memory_retrieve_successes':
+          return await this.handleRetrieveSuccesses(args);
+
+        case 'memory_retrodict':
+          return await this.handleRetrodict(args);
+
         case 'memory_create_task_scope':
           return await this.handleCreateTaskScope(args);
 
@@ -291,6 +346,8 @@ class ConfuciusOrchestratorServer {
       taskId,
       tags = [],
       confidence = 0.5,
+      outcome,
+      trajectory,
     } = args;
 
     // Validate scope-specific requirements
@@ -302,7 +359,16 @@ class ConfuciusOrchestratorServer {
       throw new Error('taskId is required when scope=task');
     }
 
-    // Create artifact
+    // Build enhanced tags with RnG Framework support
+    const enhancedTags = [...tags];
+    if (outcome) {
+      enhancedTags.push(`outcome:${outcome}`);
+    }
+    if (trajectory) {
+      enhancedTags.push(`trajectory:${trajectory}`);
+    }
+
+    // Create artifact with RnG metadata
     const artifact: Artifact = {
       id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type,
@@ -311,8 +377,10 @@ class ConfuciusOrchestratorServer {
         scope,
         submodule,
         taskId,
-        tags,
+        tags: enhancedTags,
         confidence,
+        outcome,
+        trajectory,
       },
       timestamp: new Date(),
     };
@@ -320,11 +388,21 @@ class ConfuciusOrchestratorServer {
     // Store in memory
     await this.memory.store(artifact);
 
+    // Build response with RnG info
+    let responseText = `✅ Artifact stored successfully in ${scope} scope`;
+    if (outcome) {
+      responseText += ` (outcome: ${outcome}`;
+      if (trajectory) {
+        responseText += `, trajectory: ${trajectory}`;
+      }
+      responseText += ')';
+    }
+
     return {
       content: [
         {
           type: 'text',
-          text: `✅ Artifact stored successfully in ${scope} scope`,
+          text: responseText,
         },
       ],
       isError: false,
@@ -459,6 +537,104 @@ class ConfuciusOrchestratorServer {
     ],
     isError: false,
     };
+  }
+
+  /**
+   * Handle memory_retrieve_successes tool (RnG Framework)
+   */
+  private async handleRetrieveSuccesses(args: any) {
+    const { query, activeScope } = args;
+    const context = await this.memory.retrieve(query, activeScope);
+
+    // Filter for only successful trajectories
+    const successes = context.artifacts.filter((artifact: Artifact) => {
+      const hasSuccessOutcome = artifact.metadata.tags?.some((tag: string) =>
+        tag === 'outcome:success' || tag === 'successful_trajectory'
+      );
+      const isSuccessType = artifact.type === 'successful_trajectory';
+      const isKnowledgeState = artifact.type === 'knowledge_state';
+      return hasSuccessOutcome || isSuccessType || isKnowledgeState;
+    });
+
+    // Format and return results
+    const artifactList = successes.map((artifact: Artifact) => {
+      const scopeInfo = artifact.metadata.scope;
+      const confidenceInfo = artifact.metadata.confidence ? ` (confidence: ${artifact.metadata.confidence})` : '';
+      const trajectoryInfo = artifact.metadata.trajectory ? ` [${artifact.metadata.trajectory}]` : '';
+      return `[${scopeInfo}]${confidenceInfo}${trajectoryInfo}: ${artifact.content.substring(0, 200)}${artifact.content.length > 200 ? '...' : ''}`;
+    });
+
+    const response = [
+      `🎯 RnG Framework: Successful Trajectories Retrieved`,
+      ``,
+      `Found ${successes.length} successful artifacts (filtered from ${context.artifacts.length} total):`,
+      ``,
+      ...artifactList,
+      ``,
+      `💡 Use these successful patterns to inform your current task!`
+    ].join('\n');
+
+    return { content: [{ type: 'text', text: response }], isError: false };
+  }
+
+  /**
+   * Handle memory_retrodict tool (RnG Framework)
+   */
+  private async handleRetrodict(args: any) {
+    const { failureDescription, taskContext, activeScope } = args;
+
+    // Retrieve similar successful trajectories
+    const successQuery = `${taskContext} successful pattern solution`;
+    const context = await this.memory.retrieve(successQuery, activeScope);
+
+    // Filter for successes
+    const successes = context.artifacts.filter((artifact: Artifact) => {
+      const hasSuccessOutcome = artifact.metadata.tags?.some((tag: string) =>
+        tag === 'outcome:success' || tag === 'successful_trajectory'
+      );
+      const isSuccessType = artifact.type === 'successful_trajectory';
+      const isKnowledgeState = artifact.type === 'knowledge_state';
+      return hasSuccessOutcome || isSuccessType || isKnowledgeState;
+    });
+
+    if (successes.length === 0) {
+      return {
+        content: [{
+          type: 'text',
+          text: `⚠️  No successful trajectories found for retrodiction.\n\nFailure: ${failureDescription}\nContext: ${taskContext}\n\n💡 Try executing the task first to build a knowledge base of successful patterns.`
+        }],
+        isError: false
+      };
+    }
+
+    // Analyze gaps and generate insights
+    const missingKnowledge = successes.map((artifact: Artifact) => {
+      const trajectoryInfo = artifact.metadata.trajectory || 'unknown';
+      return `✅ From ${trajectoryInfo}:\n${artifact.content.substring(0, 300)}...`;
+    });
+
+    const retrodiction = [
+      `🔮 RnG Framework: Retrodiction Analysis`,
+      ``,
+      `❌ Failure: ${failureDescription}`,
+      `📋 Context: ${taskContext}`,
+      ``,
+      `💡 Found ${successes.length} successful trajectories to learn from:`,
+      ``,
+      ...missingKnowledge.slice(0, 5),
+      ``,
+      `🎯 Key Insights:`,
+      `• These successful approaches likely would have prevented the failure`,
+      `• Extract the knowledge state (high-level plan) from each success`,
+      `• Apply generalized pattern to current task`,
+      ``,
+      `📚 Next Steps:`,
+      `1. Study the successful patterns above`,
+      `2. Identify what knowledge/strategy was missing`,
+      `3. Apply the successful approach to retry the task`
+    ].join('\n');
+
+    return { content: [{ type: 'text', text: retrodiction }], isError: false };
   }
 
   /**

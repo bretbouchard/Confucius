@@ -44,7 +44,10 @@ export type ArtifactType =
   | 'build_log'
   | 'test_result'
   | 'conversation'
-  | 'pattern';
+  | 'pattern'
+  | 'successful_trajectory'
+  | 'failed_trajectory'
+  | 'knowledge_state';
 
 /**
  * Artifact metadata
@@ -66,6 +69,10 @@ export interface ArtifactMetadata {
   confidence?: number;
   /** Related artifacts */
   related?: string[];
+  /** Task outcome (for RnG Framework) */
+  outcome?: 'success' | 'failure';
+  /** Trajectory identifier (for RnG Framework) */
+  trajectory?: string;
 }
 
 /**
