@@ -21,10 +21,16 @@ Confucius is a production-grade hierarchical memory system designed for AI agent
 
 ✅ **Hierarchical Memory** - Four-tier scope architecture (Repository → Submodule → Session → Task)
 ✅ **Intelligent Compression** - 40-60% token reduction with zero critical information loss
+✅ **Smart Compression Algorithm** - Sorts artifacts by confidence and recency, preserves critical information first
 ✅ **Cross-Session Learning** - Automatically extracts patterns from completed work
 ✅ **Fast Retrieval** - <100ms average response time
 ✅ **MCP Server** - Ready-to-use Model Context Protocol server for Claude Code
 ✅ **Task Management Integration** - Works with Beads, GitHub Issues, JIRA, and more
+✅ **Auto-Learning** - Watches for closed tasks and automatically extracts patterns
+✅ **Task Scope Creation** - Automatic task-specific memory with relevant context injection
+✅ **Pattern Extraction** - Extracts solutions, problems, and implementation patterns from text
+✅ **Issue Search** - Search tasks by keyword, label, or status
+✅ **Statistics & Monitoring** - Track memory usage, artifact counts, and token distribution
 ✨ **RnG Framework** - Retrodiction with Generalization for 17-74% improvement on OOD tasks
 
 ## Architecture
@@ -260,6 +266,157 @@ Results:
 - WebAgent: 23% → 40% success rate (74% improvement)
 - SWE-Agent: 42% → 49% success rate (17% improvement)
 - Out-of-distribution tasks: 17-74% improvement
+
+## Advanced Features
+
+### Smart Compression Algorithm
+
+Confucius uses an intelligent compression algorithm that prioritizes important information:
+
+```typescript
+// Artifacts are sorted by:
+// 1. Confidence score (higher is more important)
+// 2. Recency (more recent is preferred)
+// 3. Fit within target token budget
+
+const compressed = await memory.compress(artifacts, {
+  targetTokens: 100000,  // Maximum tokens to use
+  activeScope: 'session', // Currently active scope
+});
+```
+
+**Compression Strategy:**
+- High-confidence artifacts preserved first
+- Recent artifacts preferred over older ones
+- Zero critical information loss (40-60% compression ratio)
+- Respects scope budgets (Repository: 10%, Submodule: 30%, Session: 30%, Task: 30%)
+
+### Auto-Learning from Tasks
+
+Confucius can automatically learn from completed tasks:
+
+```typescript
+import { BeadsIntegration } from '@confucius-ai/memory/integrations';
+
+const beads = new BeadsIntegration({
+  databasePath: '/path/to/project',
+  autoCreateTaskScopes: true,   // Auto-create task scopes
+  autoGenerateNotes: true,       // Auto-generate notes from resolutions
+});
+
+// Watch for closed tasks and extract patterns automatically
+beads.watchResolutions(async (issueId, note) => {
+  console.log(`✅ Learned from ${issueId}:`, note);
+});
+```
+
+**Enable in MCP configuration:**
+```json
+{
+  "env": {
+    "CONFUCIUS_AUTO_LEARNING": "true"
+  }
+}
+```
+
+### Task-Specific Memory Scopes
+
+Create focused memory scopes for individual tasks:
+
+```typescript
+// Create task scope with automatic context injection
+await memory.createTaskScope('TASK-123', {
+  title: 'Implement OAuth2 authentication',
+  description: 'Add PKCE-based OAuth2 flow for mobile app',
+});
+
+// Relevant notes from other scopes are automatically injected
+// Task scope includes related patterns from repository, submodule, and session
+```
+
+**Benefits:**
+- Focused context for specific tasks
+- Automatic injection of relevant past solutions
+- Isolated memory per task (30% budget)
+- Automatic cleanup when task completes
+
+### Pattern Extraction
+
+Extract structured patterns from unstructured text:
+
+```typescript
+const beads = new BeadsIntegration({
+  databasePath: '/path/to/project',
+});
+
+// Extract patterns from resolved issues
+const patterns = await beads.extractPatterns('TASK-123');
+// Returns: [
+//   'Use PKCE for mobile OAuth2',
+//   'Store tokens in Keychain',
+//   'Implement token refresh rotation'
+// ]
+
+// Generate structured note from issue
+const note = await beads.generateNoteFromIssue('TASK-123');
+// Returns formatted markdown with:
+// - Problem Pattern
+// - Solution Strategy
+// - Implementation Details
+// - Related Issues
+// - Tags
+```
+
+### Issue Search and Filtering
+
+Search and filter tasks with powerful queries:
+
+```typescript
+// Search by keyword
+const results = await beads.searchIssues('OAuth2');
+// Returns all issues matching 'OAuth2' in title, description, or labels
+
+// Get issues by label
+const bugIssues = await beads.getIssuesByLabel('bug');
+const featureIssues = await beads.getIssuesByLabel('enhancement');
+
+// Get issue statistics
+const stats = await beads.getStats();
+// Returns: {
+//   total: 150,
+//   open: 45,
+//   closed: 85,
+//   in_progress: 15,
+//   blocked: 5
+// }
+```
+
+### Memory Statistics and Monitoring
+
+Track memory usage and performance:
+
+```typescript
+const stats = await memory.getStats();
+// Returns: {
+//   scopes: 5,        // Number of active scopes
+//   artifacts: 1234,  // Total artifacts stored
+//   totalTokens: 456789 // Total tokens used
+// }
+
+// Query via MCP tool
+memory_query({});
+// Returns detailed statistics for all scopes
+```
+
+**Monitor via MCP:**
+```json
+{
+  "tool": "memory_query",
+  "arguments": {
+    "scope": "repository"  // Optional: specific scope
+  }
+}
+```
 
 ## Packages
 
