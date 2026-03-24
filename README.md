@@ -512,7 +512,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ### Research Foundation
 
-This implementation is inspired by and based upon the research architecture described in:
+This project translates research from Confucius Code Agent into a production-ready hierarchical memory system for real-world AI agent workflows.
 
 **Confucius Code Agent: An Open-sourced AI Software Engineer at Industrial Scale**
 
