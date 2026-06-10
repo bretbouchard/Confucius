@@ -1,0 +1,6 @@
+{
+  "name": "@confucius-ai/cli",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Python CLI frontend for Confucius memory system — store, retrieve, search, purge, dedup, quality gates"
+}

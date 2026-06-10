@@ -1,0 +1,6 @@
+{
+  "name": "@confucius-ai/integration",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Python cross-project integration layer — tier-aware retrieval, pattern sharing, ingestion pipelines"
+}
