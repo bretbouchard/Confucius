@@ -1,0 +1,493 @@
+#!/usr/bin/env python3
+"""
+Confucius CLI - Reliable pattern storage and retrieval
+Hybrid approach: CLI + rg for reliable text search, MCP for semantic search (when available)
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+import uuid
+
+
+def get_memory_dir():
+    """Get memory directory, preferring MCP storage path if configured"""
+    env_path = os.environ.get("CONFUCIUS_STORAGE_PATH")
+    if env_path and Path(env_path).exists():
+        return Path(env_path)
+    return Path.home() / ".claude" / ".confucius" / "memory"
+
+
+CONFUCIUS_ROOT = Path.home() / ".claude" / ".confucius"
+MEMORY_DIR = get_memory_dir()
+INDEX_FILE = CONFUCIUS_ROOT / "fs_memory" / "index.json"
+
+
+def get_artifact_dirs():
+    """Get all artifact directories (memory subdirs with 2-char names)"""
+    dirs = []
+    if MEMORY_DIR.exists():
+        for d in MEMORY_DIR.iterdir():
+            if d.is_dir() and len(d.name) == 2:
+                dirs.append(d)
+    return dirs
+
+
+def find_all_artifacts():
+    """Find all artifact files across all directories"""
+    artifacts = []
+    for artifact_dir in get_artifact_dirs():
+        for f in artifact_dir.glob("*.json"):
+            artifacts.append(f)
+    return artifacts
+
+
+def ensure_dirs():
+    """Ensure memory directories exist"""
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def generate_id():
+    """Generate unique artifact ID"""
+    ts = int(datetime.now().timestamp() * 1000)
+    suffix = uuid.uuid4().hex[:8]
+    return f"artifact-{ts}-{suffix}"
+
+
+def get_artifact_path(artifact_id):
+    """Get the path for an artifact based on its ID prefix"""
+    prefix = artifact_id[:2] if len(artifact_id) >= 2 else "ar"
+    artifact_dir = MEMORY_DIR / prefix
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    return artifact_dir / f"{artifact_id}.json"
+
+
+def compute_content_hash(content, artifact_type):
+    """Compute SHA-256 hash of content + type for deduplication"""
+    return hashlib.sha256(f"{content}{artifact_type}".encode()).hexdigest()
+
+
+def cmd_store(args):
+    """Store a pattern/solution in memory"""
+    ensure_dirs()
+
+    # Read content from stdin if --content-stdin flag is set
+    if getattr(args, 'content_stdin', False):
+        content = sys.stdin.read()
+    elif args.content is not None:
+        content = args.content
+    else:
+        print("Error: Content required (positional arg or --content-stdin)")
+        sys.exit(1)
+
+    # Quality gate: minimum content length
+    if len(content.strip()) < 30:
+        print(f"Error: Content too short ({len(content.strip())} chars, minimum 30)")
+        sys.exit(1)
+
+    # Garbage phrase detection
+    garbage_phrases = ['please now', 'no decisions here', 'see reasoning']
+    content_lower = content.lower()
+    for phrase in garbage_phrases:
+        if phrase in content_lower:
+            print(f"Error: Content contains garbage phrase: \"{phrase}\"")
+            sys.exit(1)
+
+    # Deduplication check
+    content_hash = compute_content_hash(content, args.type)
+    for artifact_path in find_all_artifacts():
+        try:
+            with open(artifact_path) as f:
+                existing = json.load(f)
+            existing_hash = compute_content_hash(existing.get("content", ""), existing.get("type", ""))
+            if existing_hash == content_hash:
+                print(f"Skipped duplicate of {existing.get('id', 'unknown')}")
+                return
+        except Exception:
+            continue
+
+    artifact_id = generate_id()
+    timestamp = datetime.now().isoformat()
+
+    artifact = {
+        "id": artifact_id,
+        "type": args.type,
+        "content": content,
+        "contentHash": content_hash,
+        "metadata": {
+            "scope": args.scope,
+            "tags": args.tags.split(",") if args.tags else [],
+            "confidence": args.confidence,
+            "source": args.source
+        },
+        "timestamp": timestamp
+    }
+
+    # Write artifact file
+    artifact_file = get_artifact_path(artifact_id)
+    artifact_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(artifact_file, "w") as f:
+        json.dump(artifact, f, indent=2)
+
+    # Update index
+    update_index(artifact_id, artifact)
+
+    print(f"Stored: {artifact_id}")
+    print(f"  Type: {args.type}")
+    print(f"  Tags: {args.tags or 'none'}")
+    print(f"  Scope: {args.scope}")
+
+
+def update_index(artifact_id, artifact):
+    """Update the CLI index with new artifact"""
+    cli_index_file = MEMORY_DIR / "cli_index.json"
+
+    if cli_index_file.exists():
+        with open(cli_index_file) as f:
+            index = json.load(f)
+    else:
+        index = {"artifacts": {}, "by_tag": {}, "by_type": {}}
+
+    # Ensure structure
+    if "artifacts" not in index:
+        index["artifacts"] = {}
+    if "by_tag" not in index:
+        index["by_tag"] = {}
+    if "by_type" not in index:
+        index["by_type"] = {}
+
+    # Add to artifacts
+    index["artifacts"][artifact_id] = {
+        "type": artifact["type"],
+        "tags": artifact["metadata"]["tags"],
+        "scope": artifact["metadata"]["scope"],
+        "timestamp": artifact["timestamp"],
+        "content_preview": artifact["content"][:100] + "..."
+    }
+
+    # Update by_tag index
+    for tag in artifact["metadata"]["tags"]:
+        if tag not in index["by_tag"]:
+            index["by_tag"][tag] = []
+        index["by_tag"][tag].append(artifact_id)
+
+    # Update by_type index
+    atype = artifact["type"]
+    if atype not in index["by_type"]:
+        index["by_type"][atype] = []
+    index["by_type"][atype].append(artifact_id)
+
+    with open(cli_index_file, "w") as f:
+        json.dump(index, f, indent=2)
+
+
+def cmd_search(args):
+    """Search patterns using ripgrep (fast, reliable)"""
+    artifacts = find_all_artifacts()
+    if not artifacts:
+        print("No memories stored yet")
+        return
+
+    # Use ripgrep for fast text search across all artifact directories
+    try:
+        result = subprocess.run(
+            ["rg", "-i", "--json", args.query, str(MEMORY_DIR)],
+            capture_output=True,
+            text=True
+        )
+
+        matches = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+                if data.get("type") == "match":
+                    matches.append(data)
+            except json.JSONDecodeError:
+                continue
+
+        if not matches:
+            print(f"No results for: {args.query}")
+            return
+
+        print(f"\nFound {len(matches)} match(es):\n")
+
+        seen_files = set()
+        for match in matches[:args.limit]:
+            filepath = match.get("data", {}).get("path", {}).get("text", "")
+            if filepath in seen_files:
+                continue
+            seen_files.add(filepath)
+
+            # Load artifact for display
+            try:
+                with open(filepath) as f:
+                    artifact = json.load(f)
+
+                print(f"### {artifact.get('id', 'unknown')[:30]}...")
+                print(f"**Type:** {artifact.get('type', 'unknown')}")
+                print(f"**Tags:** {', '.join(artifact.get('metadata', {}).get('tags', []))}")
+                print(f"**Content:**")
+                content = artifact.get('content', '')
+                # Show first 200 chars
+                print(content[:200] + ("..." if len(content) > 200 else ""))
+                print()
+            except Exception as e:
+                print(f"Error reading {filepath}: {e}")
+
+    except FileNotFoundError:
+        print("Error: ripgrep (rg) not installed. Install with: brew install ripgrep")
+
+
+def cmd_list(args):
+    """List all stored patterns"""
+    artifacts = find_all_artifacts()
+
+    if not artifacts:
+        print("No memories stored yet")
+        return
+
+    print(f"\nTotal: {len(artifacts)} artifacts\n")
+
+    # Group by type
+    by_type = {}
+    for artifact_path in artifacts:
+        try:
+            with open(artifact_path) as f:
+                artifact = json.load(f)
+            atype = artifact.get("type", "unknown")
+            if atype not in by_type:
+                by_type[atype] = []
+            by_type[atype].append(artifact)
+        except Exception:
+            continue
+
+    for atype, items in by_type.items():
+        print(f"### {atype} ({len(items)})")
+        for artifact in items[:5]:  # Show first 5 of each type
+            aid = artifact.get("id", "unknown")
+            content = artifact.get("content", "")
+            preview = content[:60] + "..." if len(content) > 60 else content
+            tags = ", ".join(artifact.get("metadata", {}).get("tags", []))
+            print(f"  - {aid[:40]}")
+            print(f"    [{tags}]")
+        if len(items) > 5:
+            print(f"  ... and {len(items) - 5} more")
+        print()
+
+
+def cmd_get(args):
+    """Get full content of a specific artifact"""
+    artifacts = find_all_artifacts()
+
+    for artifact_path in artifacts:
+        if args.id in artifact_path.stem:
+            with open(artifact_path) as f:
+                artifact = json.load(f)
+
+            print(json.dumps(artifact, indent=2))
+            return
+
+    print(f"Artifact not found: {args.id}")
+
+
+def cmd_tags(args):
+    """List all tags and their counts"""
+    artifacts = find_all_artifacts()
+
+    if not artifacts:
+        print("No memories stored yet")
+        return
+
+    tag_counts = {}
+    for artifact_path in artifacts:
+        try:
+            with open(artifact_path) as f:
+                artifact = json.load(f)
+            for tag in artifact.get("metadata", {}).get("tags", []):
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        except Exception:
+            continue
+
+    if not tag_counts:
+        print("No tags found")
+        return
+
+    print("\nTags:\n")
+    for tag, count in sorted(tag_counts.items(), key=lambda x: -x[1]):
+        print(f"  {tag}: {count}")
+
+
+def cmd_stats(args):
+    """Show memory statistics"""
+    artifacts = find_all_artifacts()
+
+    if not artifacts:
+        print("No memories stored yet")
+        return
+
+    by_type = {}
+    by_scope = {}
+    for artifact_path in artifacts:
+        try:
+            with open(artifact_path) as f:
+                artifact = json.load(f)
+            atype = artifact.get("type", "unknown")
+            scope = artifact.get("metadata", {}).get("scope", "unknown")
+            by_type[atype] = by_type.get(atype, 0) + 1
+            by_scope[scope] = by_scope.get(scope, 0) + 1
+        except Exception:
+            continue
+
+    print(f"\nConfucius Memory Stats\n")
+    print(f"Total artifacts: {len(artifacts)}")
+    print(f"Types: {len(by_type)}")
+    print(f"Storage: {MEMORY_DIR}")
+
+    if by_type:
+        print(f"\nBy type:")
+        for t, count in sorted(by_type.items(), key=lambda x: -x[1]):
+            print(f"  {t}: {count}")
+
+    if by_scope:
+        print(f"\nBy scope:")
+        for s, count in sorted(by_scope.items(), key=lambda x: -x[1]):
+            print(f"  {s}: {count}")
+
+
+def cmd_purge_garbage(args):
+    """Remove garbage artifacts from storage"""
+    artifacts = find_all_artifacts()
+    removed = 0
+    kept = 0
+
+    for artifact_path in artifacts:
+        try:
+            with open(artifact_path) as f:
+                artifact = json.load(f)
+
+            content = artifact.get("content", "")
+            decisions = artifact.get("metadata", {}).get("decisions", [])
+            should_remove = False
+            reason = ""
+
+            # Rule 1: "please now" situations
+            for d in decisions:
+                situation = d.get("situation", "").strip()
+                if situation in ["please now", "please  now"]:
+                    should_remove = True
+                    reason = "malformed 'please now' situation"
+                    break
+
+            # Rule 2: Contradictory "No decisions here" entries
+            if "No decisions here" in content:
+                should_remove = True
+                reason = "contradictory 'No decisions here' entry"
+
+            # Rule 3: Situations that are just "I" (1-2 chars)
+            for d in decisions:
+                situation = d.get("situation", "").strip()
+                if len(situation) <= 2:
+                    should_remove = True
+                    reason = f"situation too short: '{situation}'"
+                    break
+
+            # Rule 4: Test artifacts
+            if "Test pattern: Confucius integration" in content:
+                should_remove = True
+                reason = "test artifact"
+
+            # Rule 5: Content duplicates (keep first, remove rest)
+            content_hash = compute_content_hash(content, artifact.get("type", ""))
+
+            if should_remove:
+                if args.dry_run:
+                    print(f"  WOULD REMOVE: {artifact.get('id', '?')[:40]} ({reason})")
+                else:
+                    artifact_path.unlink()
+                    print(f"  REMOVED: {artifact.get('id', '?')[:40]} ({reason})")
+                removed += 1
+            else:
+                kept += 1
+
+        except Exception as e:
+            print(f"  ERROR reading {artifact_path}: {e}")
+
+    action = "Would remove" if args.dry_run else "Removed"
+    print(f"\n{action} {removed} artifacts, kept {kept}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Confucius CLI - Reliable pattern storage and retrieval",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  confucius store pattern "Use Swift concurrency for async operations" --tags swift,async
+  confucius search "swift async"
+  confucius list
+  confucius get artifact-1234567890
+  confucius tags
+  confucius stats
+  confucius purge-garbage --dry-run
+"""
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Command")
+
+    # store
+    p_store = subparsers.add_parser("store", help="Store a pattern/solution")
+    p_store.add_argument("type", choices=["pattern", "error_message", "design_decision", "solution", "anti_pattern"], help="Type of memory")
+    p_store.add_argument("content", nargs='?', default=None, help="Content to store")
+    p_store.add_argument("--content-stdin", action="store_true", help="Read content from stdin")
+    p_store.add_argument("--tags", "-t", help="Comma-separated tags")
+    p_store.add_argument("--scope", "-s", default="repository", help="Scope (repository/submodule/session/task)")
+    p_store.add_argument("--confidence", "-c", type=float, default=0.8, help="Confidence score (0-1)")
+    p_store.add_argument("--source", help="Source of this pattern")
+    p_store.set_defaults(func=cmd_store)
+
+    # search
+    p_search = subparsers.add_parser("search", help="Search patterns (uses ripgrep)")
+    p_search.add_argument("query", help="Search query")
+    p_search.add_argument("--limit", "-l", type=int, default=10, help="Max results")
+    p_search.set_defaults(func=cmd_search)
+
+    # list
+    p_list = subparsers.add_parser("list", help="List all stored patterns")
+    p_list.set_defaults(func=cmd_list)
+
+    # get
+    p_get = subparsers.add_parser("get", help="Get full artifact by ID")
+    p_get.add_argument("id", help="Artifact ID (or partial)")
+    p_get.set_defaults(func=cmd_get)
+
+    # tags
+    p_tags = subparsers.add_parser("tags", help="List all tags")
+    p_tags.set_defaults(func=cmd_tags)
+
+    # stats
+    p_stats = subparsers.add_parser("stats", help="Show memory statistics")
+    p_stats.set_defaults(func=cmd_stats)
+
+    # purge-garbage
+    p_purge = subparsers.add_parser("purge-garbage", help="Remove garbage artifacts")
+    p_purge.add_argument("--dry-run", action="store_true", help="Only show what would be removed")
+    p_purge.set_defaults(func=cmd_purge_garbage)
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return
+
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
