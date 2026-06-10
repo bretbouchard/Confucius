@@ -126,6 +126,40 @@ confucius purge-garbage --dry-run
 | `stats` | Memory statistics (counts by type, scope) |
 | `purge-garbage` | Remove garbage artifacts (dedup, quality gates) |
 
+## Obsidian Integration
+
+Point the CLI at your Obsidian vault — artifacts become notes, notes become searchable memory.
+
+```bash
+export CONFUCIUS_OBSIDIAN_VAULT=~/my-vault
+```
+
+Once set, `store`, `search`, `list`, and `stats` all include the vault automatically:
+
+- **Store** → writes a `.md` file with YAML frontmatter to `vault/Confucius/{scope}/`
+- **Search** → searches both JSON memory and vault notes (deduped by artifact ID)
+- **List/Stats** → includes vault note counts
+
+### Vault note format
+
+```markdown
+---
+type: pattern
+scope: repository
+tags: ["swift", "async"]
+confidence: 0.8
+artifact_id: artifact-1234567890
+created: 2026-06-09
+validated: false
+---
+
+# Always use Swift structured concurrency
+
+Use async/await with TaskGroup instead of completion handlers.
+```
+
+Obsidian treats these as regular notes — graph view, search, backlinks, and tags all work natively. If you edit or annotate a note in Obsidian, it gets picked up by `confucius search` and `confucius list` automatically.
+
 ## Integration Layer (Python)
 
 Located in `packages/integration/`. Provides:
