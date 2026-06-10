@@ -2,17 +2,23 @@
 """
 Confucius CLI - Reliable pattern storage and retrieval
 Hybrid approach: CLI + rg for reliable text search, MCP for semantic search (when available)
+Supports Obsidian vault integration (read .md notes, write artifacts as .md)
 """
 
 import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 import uuid
+
+
+CONFUCIUS_TYPES = ["pattern", "error_message", "design_decision", "solution", "anti_pattern",
+                   "knowledge_state", "successful_trajectory", "failed_trajectory"]
 
 
 def get_memory_dir():
@@ -21,6 +27,14 @@ def get_memory_dir():
     if env_path and Path(env_path).exists():
         return Path(env_path)
     return Path.home() / ".claude" / ".confucius" / "memory"
+
+
+def get_obsidian_vault():
+    """Get Obsidian vault path from env var. Returns None if not configured."""
+    vault = os.environ.get("CONFUCIUS_OBSIDIAN_VAULT")
+    if vault and Path(vault).exists():
+        return Path(vault)
+    return None
 
 
 CONFUCIUS_ROOT = Path.home() / ".claude" / ".confucius"
@@ -45,6 +59,133 @@ def find_all_artifacts():
         for f in artifact_dir.glob("*.json"):
             artifacts.append(f)
     return artifacts
+
+
+# ── Obsidian Integration ──
+
+def parse_frontmatter(text):
+    """Parse YAML frontmatter from markdown text. Returns (metadata_dict, body) or (None, text)."""
+    if not text.startswith("---"):
+        return None, text
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return None, text
+    try:
+        frontmatter_text = parts[1].strip()
+        metadata = {}
+        for line in frontmatter_text.split("\n"):
+            if ":" in line:
+                key, _, value = line.partition(":")
+                key = key.strip()
+                value = value.strip()
+                # Handle arrays [a, b, c] and quoted strings
+                if value.startswith("[") and value.endswith("]"):
+                    metadata[key] = [v.strip().strip("\"'") for v in value[1:-1].split(",") if v.strip()]
+                elif value.startswith('"') or value.startswith("'"):
+                    metadata[key] = value.strip("\"'")
+                else:
+                    try:
+                        metadata[key] = float(value) if "." in value else int(value)
+                    except ValueError:
+                        metadata[key] = value
+        body = parts[2].strip()
+        return metadata, body
+    except Exception:
+        return None, text
+
+
+def find_obsidian_notes(vault_path=None):
+    """Find all .md files in Obsidian vault that have Confucius frontmatter."""
+    vault = vault_path or get_obsidian_vault()
+    if not vault:
+        return []
+    notes = []
+    for md_file in vault.rglob("*.md"):
+        try:
+            text = md_file.read_text(encoding="utf-8")
+            metadata, body = parse_frontmatter(text)
+            if metadata and metadata.get("type") in CONFUCIUS_TYPES:
+                notes.append({
+                    "path": md_file,
+                    "metadata": metadata,
+                    "body": body,
+                })
+        except Exception:
+            continue
+    return notes
+
+
+def obsidian_note_to_artifact(note):
+    """Convert an Obsidian note dict to a Confucius artifact dict."""
+    meta = note["metadata"]
+    return {
+        "id": meta.get("artifact_id", note["path"].stem),
+        "type": meta.get("type", "pattern"),
+        "content": note["body"],
+        "metadata": {
+            "scope": meta.get("scope", "repository"),
+            "tags": meta.get("tags", []),
+            "confidence": meta.get("confidence", 0.8),
+            "source": meta.get("source", "obsidian"),
+            "obsidian_path": str(note["path"]),
+            "validated": meta.get("validated", False),
+        },
+        "timestamp": meta.get("created", meta.get("timestamp", datetime.now().isoformat())),
+        "obsidian": True,
+    }
+
+
+def artifact_to_obsidian_markdown(artifact):
+    """Convert a Confucius artifact dict to Obsidian markdown with frontmatter."""
+    meta = artifact["metadata"]
+    tags = meta.get("tags", [])
+    if isinstance(tags, list):
+        tags_str = str(tags).replace("'", '"')
+    else:
+        tags_str = f'["{tags}"]'
+
+    frontmatter = f"""---
+type: {artifact["type"]}
+scope: {meta.get("scope", "repository")}
+tags: {tags_str}
+confidence: {meta.get("confidence", 0.8)}
+artifact_id: {artifact["id"]}
+created: {artifact.get("timestamp", datetime.now().isoformat())}
+source: {meta.get("source", "confucius")}
+validated: false
+---
+"""
+    # Use first line of content as heading if it's short
+    content = artifact["content"]
+    first_line = content.split("\n")[0] if content else ""
+    if len(first_line) < 80 and first_line:
+        body = f"# {first_line}\n\n{content}"
+    else:
+        body = content
+
+    return frontmatter + body
+
+
+def write_to_obsidian_vault(artifact, vault_path=None):
+    """Write an artifact as a markdown file to the Obsidian vault."""
+    vault = vault_path or get_obsidian_vault()
+    if not vault:
+        return None
+
+    scope = artifact["metadata"].get("scope", "repository")
+    scope_dir = vault / "Confucius" / scope
+    scope_dir.mkdir(parents=True, exist_ok=True)
+
+    # Sanitize filename from content
+    content = artifact["content"]
+    first_line = content.split("\n")[0] if content else artifact["id"]
+    safe_name = re.sub(r'[^\w\s-]', '', first_line)[:60].strip().lower().replace(" ", "-") or artifact["id"]
+    filename = f"{safe_name}.md"
+
+    md_path = scope_dir / filename
+    md_content = artifact_to_obsidian_markdown(artifact)
+    md_path.write_text(md_content, encoding="utf-8")
+    return md_path
 
 
 def ensure_dirs():
@@ -137,6 +278,13 @@ def cmd_store(args):
     # Update index
     update_index(artifact_id, artifact)
 
+    # Write to Obsidian vault if configured
+    vault = get_obsidian_vault()
+    if vault:
+        obsidian_path = write_to_obsidian_vault(artifact, vault)
+        if obsidian_path:
+            print(f"  Obsidian: {obsidian_path.relative_to(vault)}")
+
     print(f"Stored: {artifact_id}")
     print(f"  Type: {args.type}")
     print(f"  Tags: {args.tags or 'none'}")
@@ -187,30 +335,38 @@ def update_index(artifact_id, artifact):
 
 
 def cmd_search(args):
-    """Search patterns using ripgrep (fast, reliable)"""
+    """Search patterns using ripgrep (fast, reliable) — includes Obsidian vault if configured"""
     artifacts = find_all_artifacts()
     if not artifacts:
         print("No memories stored yet")
         return
 
-    # Use ripgrep for fast text search across all artifact directories
-    try:
-        result = subprocess.run(
-            ["rg", "-i", "--json", args.query, str(MEMORY_DIR)],
-            capture_output=True,
-            text=True
-        )
+    # Build search paths: Confucius memory + Obsidian vault
+    search_paths = [str(MEMORY_DIR)]
+    vault = get_obsidian_vault()
+    if vault:
+        vault_confucius = vault / "Confucius"
+        if vault_confucius.exists():
+            search_paths.append(str(vault_confucius))
 
+    # Use ripgrep for fast text search across all paths
+    try:
         matches = []
-        for line in result.stdout.strip().split("\n"):
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-                if data.get("type") == "match":
-                    matches.append(data)
-            except json.JSONDecodeError:
-                continue
+        for search_path in search_paths:
+            result = subprocess.run(
+                ["rg", "-i", "--json", args.query, search_path],
+                capture_output=True,
+                text=True
+            )
+            for line in result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if data.get("type") == "match":
+                        matches.append(data)
+                except json.JSONDecodeError:
+                    continue
 
         if not matches:
             print(f"No results for: {args.query}")
@@ -219,24 +375,52 @@ def cmd_search(args):
         print(f"\nFound {len(matches)} match(es):\n")
 
         seen_files = set()
+        seen_ids = set()
         for match in matches[:args.limit]:
             filepath = match.get("data", {}).get("path", {}).get("text", "")
             if filepath in seen_files:
                 continue
             seen_files.add(filepath)
 
-            # Load artifact for display
-            try:
-                with open(filepath) as f:
-                    artifact = json.load(f)
+            is_obsidian = filepath.endswith(".md")
 
-                print(f"### {artifact.get('id', 'unknown')[:30]}...")
-                print(f"**Type:** {artifact.get('type', 'unknown')}")
-                print(f"**Tags:** {', '.join(artifact.get('metadata', {}).get('tags', []))}")
-                print(f"**Content:**")
-                content = artifact.get('content', '')
-                # Show first 200 chars
-                print(content[:200] + ("..." if len(content) > 200 else ""))
+            try:
+                if is_obsidian:
+                    with open(filepath) as f:
+                        text = f.read()
+                    metadata, body = parse_frontmatter(text)
+                    if not metadata:
+                        continue  # Skip .md files without Confucius frontmatter
+                    aid = metadata.get("artifact_id", Path(filepath).stem)
+                    if aid in seen_ids:
+                        continue
+                    seen_ids.add(aid)
+                    atype = metadata.get("type", "pattern")
+                    tags = metadata.get("tags", [])
+                    if isinstance(tags, list):
+                        tags = ", ".join(tags)
+                    validated = " [validated]" if metadata.get("validated") else ""
+                    print(f"### {aid[:40]}...{validated}")
+                    print(f"**Type:** {atype}")
+                    print(f"**Tags:** {tags}")
+                    print(f"**Source:** obsidian")
+                    print(f"**Content:**")
+                    print(body[:200] + ("..." if len(body) > 200 else ""))
+                else:
+                    with open(filepath) as f:
+                        artifact = json.load(f)
+                    if "id" not in artifact:
+                        continue  # Skip non-artifact JSON (index files, etc.)
+                    aid = artifact["id"]
+                    if aid in seen_ids:
+                        continue
+                    seen_ids.add(aid)
+                    print(f"### {aid[:30]}...")
+                    print(f"**Type:** {artifact.get('type', 'unknown')}")
+                    print(f"**Tags:** {', '.join(artifact.get('metadata', {}).get('tags', []))}")
+                    print(f"**Content:**")
+                    content = artifact.get('content', '')
+                    print(content[:200] + ("..." if len(content) > 200 else ""))
                 print()
             except Exception as e:
                 print(f"Error reading {filepath}: {e}")
@@ -246,14 +430,19 @@ def cmd_search(args):
 
 
 def cmd_list(args):
-    """List all stored patterns"""
+    """List all stored patterns (Confucius + Obsidian vault if configured)"""
     artifacts = find_all_artifacts()
 
-    if not artifacts:
+    # Also count Obsidian notes
+    obsidian_notes = find_obsidian_notes()
+    total_obsidian = len(obsidian_notes)
+
+    if not artifacts and not obsidian_notes:
         print("No memories stored yet")
         return
 
-    print(f"\nTotal: {len(artifacts)} artifacts\n")
+    total = len(artifacts) + total_obsidian
+    print(f"\nTotal: {total} artifacts ({len(artifacts)} confucius, {total_obsidian} obsidian)\n")
 
     # Group by type
     by_type = {}
@@ -268,14 +457,26 @@ def cmd_list(args):
         except Exception:
             continue
 
+    # Add Obsidian notes to type groups
+    for note in obsidian_notes:
+        artifact = obsidian_note_to_artifact(note)
+        atype = artifact["type"]
+        if atype not in by_type:
+            by_type[atype] = []
+        by_type[atype].append(artifact)
+
     for atype, items in by_type.items():
         print(f"### {atype} ({len(items)})")
-        for artifact in items[:5]:  # Show first 5 of each type
+        for artifact in items[:5]:
             aid = artifact.get("id", "unknown")
             content = artifact.get("content", "")
             preview = content[:60] + "..." if len(content) > 60 else content
-            tags = ", ".join(artifact.get("metadata", {}).get("tags", []))
-            print(f"  - {aid[:40]}")
+            tags = artifact.get("metadata", {}).get("tags", [])
+            if isinstance(tags, list):
+                tags = ", ".join(tags)
+            source = " [obsidian]" if artifact.get("obsidian") else ""
+            validated = " [validated]" if artifact.get("metadata", {}).get("validated") else ""
+            print(f"  - {aid[:40]}{validated}{source}")
             print(f"    [{tags}]")
         if len(items) > 5:
             print(f"  ... and {len(items) - 5} more")
@@ -325,10 +526,10 @@ def cmd_tags(args):
 
 
 def cmd_stats(args):
-    """Show memory statistics"""
+    """Show memory statistics (Confucius + Obsidian vault if configured)"""
     artifacts = find_all_artifacts()
 
-    if not artifacts:
+    if not artifacts and not find_obsidian_notes():
         print("No memories stored yet")
         return
 
@@ -345,10 +546,24 @@ def cmd_stats(args):
         except Exception:
             continue
 
+    # Count Obsidian notes
+    obsidian_notes = find_obsidian_notes()
+    vault = get_obsidian_vault()
+    for note in obsidian_notes:
+        artifact = obsidian_note_to_artifact(note)
+        atype = artifact["type"]
+        scope = artifact["metadata"]["scope"]
+        by_type[atype] = by_type.get(atype, 0) + 1
+        by_scope[scope] = by_scope.get(scope, 0) + 1
+
+    total = len(artifacts) + len(obsidian_notes)
+
     print(f"\nConfucius Memory Stats\n")
-    print(f"Total artifacts: {len(artifacts)}")
+    print(f"Total artifacts: {total} ({len(artifacts)} confucius, {len(obsidian_notes)} obsidian)")
     print(f"Types: {len(by_type)}")
     print(f"Storage: {MEMORY_DIR}")
+    if vault:
+        print(f"Obsidian vault: {vault}")
 
     if by_type:
         print(f"\nBy type:")
@@ -436,6 +651,13 @@ Examples:
   confucius tags
   confucius stats
   confucius purge-garbage --dry-run
+
+Obsidian integration (set CONFUCIUS_OBSIDIAN_VAULT env var):
+  export CONFUCIUS_OBSIDIAN_VAULT=~/my-vault
+  confucius store pattern "Always validate at boundaries" --tags security
+  confucius search "security"       # searches both Confucius memory AND vault
+  confucius list                   # includes vault notes
+  confucius stats                  # includes vault counts
 """
     )
 
